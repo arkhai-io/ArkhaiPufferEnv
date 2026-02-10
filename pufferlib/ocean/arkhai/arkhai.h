@@ -8,19 +8,8 @@
 
 #define MAX_JOBS 100
 
-#define NUM_OBS 21
 #define NUM_ACT 2
-
-typedef struct {
-    int price;
-    int kwh_storage; } NodeSpec;
-
-const int A100 = 0;
-const int H100 = 1;
-const int R5090 = 2;
-#define NODE_TYPES 3
-float NODE_PRICES[] = {0, 0, 0};
-float NODE_ENERGY_KW[] = {0, 0, 0};
+#define MAX_NODE_TYPES 16
 
 // Whenever you call vec_log, PufferLib will
 // sum all fields in Log across all env instances per-core
@@ -36,7 +25,7 @@ typedef struct {
 } Log;
 
 typedef struct {
-    int nodes[NODE_TYPES];
+    int nodes[MAX_NODE_TYPES];
     float tb_usage;
     int duration;
     int start;
@@ -52,7 +41,7 @@ typedef struct {
 } Node;
 
 typedef struct {
-    Node nodes[NODE_TYPES];
+    Node nodes[MAX_NODE_TYPES];
     float tb_capacity;
     float tb_usage;
     float kwh_storage;
@@ -71,8 +60,8 @@ typedef struct {
 // Different clusters can have different specifications with noise.
 // Clusters are sampled from a ClusterSpec params + domain randomization (dr).
 typedef struct {
-    int node_capacity[NODE_TYPES];
-    float node_capacity_dr[NODE_TYPES];
+    int node_capacity[MAX_NODE_TYPES];
+    float node_capacity_dr[MAX_NODE_TYPES];
     int tb_capacity;
     float tb_capacity_dr;
     float kwh_capacity;
@@ -116,8 +105,10 @@ typedef struct {
     int tick;
     int episode_length;
     int request_timeout;
-    int job_nodes[NODE_TYPES];
-    float job_nodes_dr[NODE_TYPES];
+    int node_types;
+    int num_obs;
+    int job_nodes[MAX_NODE_TYPES];
+    float job_nodes_dr[MAX_NODE_TYPES];
     int job_duration;
     float job_duration_dr;
     float job_tb_usage;
@@ -130,12 +121,8 @@ typedef struct {
     float scripted_sell_price_dr;
     float reward_scale;
     float tb_price;
-    float a100_price;
-    float a100_kw;
-    float h100_price;
-    float h100_kw;
-    float r5090_price;
-    float r5090_kw;
+    float node_prices[MAX_NODE_TYPES];
+    float node_energy_kw[MAX_NODE_TYPES];
     float energy_demand_base;
     float kwh_price_base;
     float kwh_price_sensitivity;
@@ -162,6 +149,33 @@ enum PRESET {
     PREMIUM_HPC,
 };
 
+enum SIDE {
+    SELLER,
+    BUYER,
+    BOTH,
+};
+
+float randf(float min, float max) {
+    return min + ((float)rand()/(float)(RAND_MAX))*(max-min);
+}
+
+// Simple uniform randomization with dr
+float randomized(float base, float dr) {
+    return randf(base*(1.0f-dr), base*(1.0f+dr));
+}
+
+void init_cluster(Cluster* cluster, ClusterSpec* spec, int node_types) {
+    cluster->kw_generation = randomized(spec->kw_generation, spec->kw_generation_dr);
+    cluster->kwh_capacity = randomized(spec->kwh_capacity, spec->kwh_capacity_dr);
+    cluster->tb_capacity = randomized(spec->tb_capacity, spec->tb_capacity_dr);
+    for (int i=0; i<node_types; i++) {
+        int capacityy = spec->node_capacity[i];
+        float capacity_dr = spec->node_capacity_dr[i];
+        cluster->nodes[i].total = randomized(capacityy, capacity_dr);
+        cluster->nodes[i].free = cluster->nodes[i].total;
+    }
+}
+
 /*
 void apply_kwh_storage_producer_preset(ClusterSpec* spec) {
     env->max_nodes = 0;
@@ -180,38 +194,12 @@ void apply_storage_center_preset(Arkhai* env) {
 
 // TODO: add sla, rep, etc
 void apply_premium_hpc_preset(Arkhai* env) {
-    env->a100_price *= 1.2;
-    env->h100_price *= 1.2;
+    for (int i = 0; i < env->node_types; i++) {
+        env->node_prices[i] *= 1.2;
+    }
     env->tb_usage_price *= 1.2;
 }
 */
-
-enum SIDE {
-    SELLER,
-    BUYER,
-    BOTH,
-};
-
-float randf(float min, float max) {
-    return min + ((float)rand()/(float)(RAND_MAX))*(max-min);
-}
-
-// Simple uniform randomization with dr
-float randomized(float base, float dr) {
-    return randf(base*(1.0f-dr), base*(1.0f+dr));
-}
-
-void init_cluster(Cluster* cluster, ClusterSpec* spec) {
-    cluster->kw_generation = randomized(spec->kw_generation, spec->kw_generation_dr);
-    cluster->kwh_capacity = randomized(spec->kwh_capacity, spec->kwh_capacity_dr);
-    cluster->tb_capacity = randomized(spec->tb_capacity, spec->tb_capacity_dr);
-    for (int i=0; i<NODE_TYPES; i++) {
-        int capacityy = spec->node_capacity[i];
-        float capacity_dr = spec->node_capacity_dr[i];
-        cluster->nodes[i].total = randomized(capacityy, capacity_dr);
-        cluster->nodes[i].free = cluster->nodes[i].total;
-    }
-}
 
 void init(Arkhai* env, ClusterSpec buyer_spec, ClusterSpec seller_spec) {
     int num_buyers = env->ai_buyers + env->scripted_buyers;
@@ -250,12 +238,7 @@ void init(Arkhai* env, ClusterSpec buyer_spec, ClusterSpec seller_spec) {
         agent_idx++;
     }
 
-    NODE_PRICES[A100] = env->a100_price;
-    NODE_PRICES[H100] = env->h100_price;
-    NODE_PRICES[R5090] = env->r5090_price;
-    NODE_ENERGY_KW[A100] = env->a100_kw;
-    NODE_ENERGY_KW[H100] = env->h100_kw;
-    NODE_ENERGY_KW[R5090] = env->r5090_kw;
+    assert(env->node_types > 0 && env->node_types <= MAX_NODE_TYPES);
 
     // Sanity checks. These are here because it is easy to mess up init
     assert(env->ai_sellers >= 0);
@@ -275,12 +258,10 @@ void init(Arkhai* env, ClusterSpec buyer_spec, ClusterSpec seller_spec) {
     assert(env->scripted_buy_price_dr >= 0.0f);
     assert(env->reward_scale > 0.0f);
     assert(env->tb_price >= 0.0f);
-    assert(env->a100_price >= 0.0f);
-    assert(env->a100_kw > 0.0f);
-    assert(env->h100_price >= 0.0f);
-    assert(env->h100_kw > 0.0f);
-    assert(env->r5090_price >= 0.0f);
-    assert(env->r5090_kw > 0.0f);
+    for (int i = 0; i < env->node_types; i++) {
+        assert(env->node_prices[i] >= 0.0f);
+        assert(env->node_energy_kw[i] > 0.0f);
+    }
     assert(env->energy_demand_base >= 0.0f);
     assert(env->kwh_price_base >= 0.0f);
     assert(env->kwh_price_sensitivity >= 0.0f);
@@ -289,7 +270,7 @@ void init(Arkhai* env, ClusterSpec buyer_spec, ClusterSpec seller_spec) {
     assert(env->randomize_offset == 0 || env->randomize_offset == 1);
     for (int agent_idx=0; agent_idx<env->num_agents; agent_idx++) {
         ClusterSpec* spec = &env->agents[agent_idx].cluster_spec;
-        for (int i=0; i<NODE_TYPES; i++) {
+        for (int i=0; i<env->node_types; i++) {
             assert(spec->node_capacity[i] >= 0);
             assert(spec->node_capacity_dr[i] >= 0.0f);
         }
@@ -320,17 +301,17 @@ int select_buyer(Arkhai* env) {
 }
 
 
-void sanity_check(Job job) {
+void sanity_check(Job job, int node_types) {
     assert(job.tb_usage >= 0);
-    for (int i=0; i<NODE_TYPES; i++) {
+    for (int i=0; i<node_types; i++) {
         assert(job.nodes[i] >= 0);
     }
 }
 
 float job_price(Arkhai* env, Job* job) {
     float price = env->tb_price*job->tb_usage;
-    for (int i=0; i<NODE_TYPES; i++) {
-        price += NODE_PRICES[i]*job->nodes[i];
+    for (int i=0; i<env->node_types; i++) {
+        price += env->node_prices[i]*job->nodes[i];
     }
     return price;
 }
@@ -345,7 +326,7 @@ Job generate_request(Arkhai* env) {
         .active = true,
         .negotiations = 0,
     };
-    for (int i=0; i<NODE_TYPES; i++) {
+    for (int i=0; i<env->node_types; i++) {
         int nodes = env->job_nodes[i];
         float nodes_dr = env->job_nodes_dr[i];
         job.nodes[i] = randomized(nodes, nodes_dr);
@@ -367,7 +348,7 @@ void compute_observations(Arkhai* env) {
         Cluster* cluster = &agent->cluster;
 
         env->observations[i++] = (env->tick % 24) / 24.0f;
-        for (int j=0; j<NODE_TYPES; j++) {
+        for (int j=0; j<env->node_types; j++) {
             env->observations[i++] = cluster->nodes[j].total / ((float)env->job_nodes[j] + 1);
             env->observations[i++] = cluster->nodes[j].free / ((float)env->job_nodes[j] + 1);
         }
@@ -377,7 +358,7 @@ void compute_observations(Arkhai* env) {
         env->observations[i++] = cluster->kwh_storage / ((float)cluster->kwh_capacity + 1);
         env->observations[i++] = cluster->kwh_capacity / ((float)cluster->kwh_capacity + 1);
         env->observations[i++] = cluster->kw_generation / ((float)cluster->kwh_capacity + 1);
-        for (int j=0; j<NODE_TYPES; j++) {
+        for (int j=0; j<env->node_types; j++) {
             env->observations[i++] = request->nodes[j] / ((float)env->job_nodes[j] + 1);
         }
         env->observations[i++] = request->tb_usage / ((float)env->job_tb_usage + 1);
@@ -407,7 +388,7 @@ void c_reset(Arkhai* env) {
         agent->prev_reward = 0.0f;
         agent->episode_return = 0.0f;
         agent->filled_jobs = 0;
-        init_cluster(&agent->cluster, &agent->cluster_spec);
+        init_cluster(&agent->cluster, &agent->cluster_spec, env->node_types);
         memset(agent->jobs, 0, MAX_JOBS*sizeof(Job));
         if (agent->is_buyer) {
             agent->request = generate_request(env);
@@ -422,7 +403,7 @@ bool can_accept_job(Arkhai* env, Agent* agent, Job* job) {
     if (job->tb_usage > cluster->tb_capacity) {
         return false;
     }
-    for (int j=0; j<NODE_TYPES; j++) {
+    for (int j=0; j<env->node_types; j++) {
         if (job->nodes[j] > cluster->nodes[j].free) {
             return false;
         }
@@ -446,10 +427,10 @@ void accept_job(Arkhai* env, Job* job, int idx) {
             continue;
         }
         agent->jobs[i] = *job;
-        for (int j=0; j<NODE_TYPES; j++) {
+        for (int j=0; j<env->node_types; j++) {
             cluster->nodes[j].free -= job->nodes[j];
         }
-        //printf("Accepted job on tick %d . Remaining 5090 nodes: %d\n", env->tick, cluster->nodes[R5090].free);
+        //printf("Accepted job on tick %d . Remaining gpu_2 nodes: %d\n", env->tick, cluster->nodes[2].free);
         cluster->tb_capacity -= job->tb_usage;
         return;
     }
@@ -459,8 +440,8 @@ void accept_job(Arkhai* env, Job* job, int idx) {
 // job_efficiency < 1 to compensate if you use this.
 float job_kw(Arkhai* env, Job job) {
     float kw = 0.0f;
-    for (int i=0; i<NODE_TYPES; i++) {
-        kw += job.nodes[i]*NODE_ENERGY_KW[i];
+    for (int i=0; i<env->node_types; i++) {
+        kw += job.nodes[i]*env->node_energy_kw[i];
     }
     float efficiency = randomized(env->job_efficiency, env->job_efficiency_dr);
     return efficiency*kw;
@@ -509,7 +490,7 @@ void clear_finished_jobs(Arkhai* env) {
             if (env->tick < job.start + job.duration) {
                 continue;
             }
-            for (int j=0; j<NODE_TYPES; j++) {
+            for (int j=0; j<env->node_types; j++) {
                 cluster->nodes[j].free += job.nodes[j];
             }
             cluster->tb_capacity += job.tb_usage;

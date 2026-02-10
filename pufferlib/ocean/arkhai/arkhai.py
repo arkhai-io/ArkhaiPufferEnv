@@ -10,8 +10,10 @@ from pufferlib.ocean.arkhai import binding
 # Let me know if you'd rather have them duplicated explicitly.
 class Arkhai(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, buf=None, seed=0, **kwargs):
+        node_types = int(kwargs.get('node_types', 3))
+        obs_dim = 12 + 3 * node_types
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
-            shape=(21,), dtype=np.float32)
+            shape=(obs_dim,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.MultiDiscrete([9, 2])
         self.render_mode = render_mode
         self.num_agents = num_envs

@@ -4,18 +4,21 @@
 #include "../env_binding.h"
 
 static int my_init(Env* env, PyObject* args, PyObject* kwargs) {
+    env->node_types = (int)unpack(kwargs, "node_types");
+    env->num_obs = 12 + 3 * env->node_types;
     env->ai_sellers = unpack(kwargs, "ai_sellers");
     env->ai_buyers = unpack(kwargs, "ai_buyers");
     env->scripted_sellers = unpack(kwargs, "scripted_sellers");
     env->scripted_buyers = unpack(kwargs, "scripted_buyers");
     env->episode_length = unpack(kwargs, "episode_length");
     env->request_timeout = unpack(kwargs, "request_timeout");
-    env->job_nodes[A100] = unpack(kwargs, "job_a100_nodes");
-    env->job_nodes[H100] = unpack(kwargs, "job_h100_nodes");
-    env->job_nodes[R5090] = unpack(kwargs, "job_r5090_nodes");
-    env->job_nodes_dr[A100] = unpack(kwargs, "job_a100_nodes_dr");
-    env->job_nodes_dr[H100] = unpack(kwargs, "job_h100_nodes_dr");
-    env->job_nodes_dr[R5090] = unpack(kwargs, "job_r5090_nodes_dr");
+    char key[64];
+    for (int i = 0; i < env->node_types; i++) {
+        snprintf(key, sizeof(key), "job_gpu_%d_nodes", i);
+        env->job_nodes[i] = unpack(kwargs, key);
+        snprintf(key, sizeof(key), "job_gpu_%d_nodes_dr", i);
+        env->job_nodes_dr[i] = unpack(kwargs, key);
+    }
     env->job_duration = unpack(kwargs, "job_duration");
     env->job_duration_dr = unpack(kwargs, "job_duration_dr");
     env->job_tb_usage = unpack(kwargs, "job_tb_usage");
@@ -28,12 +31,12 @@ static int my_init(Env* env, PyObject* args, PyObject* kwargs) {
     env->scripted_sell_price_dr = unpack(kwargs, "scripted_sell_price_dr");
     env->reward_scale = unpack(kwargs, "reward_scale");
     env->tb_price = unpack(kwargs, "tb_price");
-    env->a100_price = unpack(kwargs, "a100_price");
-    env->a100_kw = unpack(kwargs, "a100_kw");
-    env->h100_price = unpack(kwargs, "h100_price");
-    env->h100_kw = unpack(kwargs, "h100_kw");
-    env->r5090_price = unpack(kwargs, "r5090_price");
-    env->r5090_kw = unpack(kwargs, "r5090_kw");
+    for (int i = 0; i < env->node_types; i++) {
+        snprintf(key, sizeof(key), "gpu_%d_price", i);
+        env->node_prices[i] = unpack(kwargs, key);
+        snprintf(key, sizeof(key), "gpu_%d_kw", i);
+        env->node_energy_kw[i] = unpack(kwargs, key);
+    }
     env->energy_demand_base = unpack(kwargs, "energy_demand_base");
     env->kwh_price_base = unpack(kwargs, "kwh_price_base");
     env->kwh_price_sensitivity = unpack(kwargs, "kwh_price_sensitivity");
@@ -46,24 +49,19 @@ static int my_init(Env* env, PyObject* args, PyObject* kwargs) {
     env->b3 = unpack(kwargs, "b3");
     env->randomize_offset = unpack(kwargs, "randomize_offset");
     env->preset = unpack(kwargs, "preset");
-    ClusterSpec seller_spec = {
-        .node_capacity = {
-            unpack(kwargs, "cluster_a100_capacity"),
-            unpack(kwargs, "cluster_h100_capacity"),
-            unpack(kwargs, "cluster_r5090_capacity"),
-        },
-        .node_capacity_dr = {
-            unpack(kwargs, "cluster_a100_capacity_dr"),
-            unpack(kwargs, "cluster_h100_capacity_dr"),
-            unpack(kwargs, "cluster_r5090_capacity_dr"),
-        },
-        .tb_capacity = unpack(kwargs, "cluster_tb_capacity"),
-        .tb_capacity_dr = unpack(kwargs, "cluster_tb_capacity_dr"),
-        .kwh_capacity = unpack(kwargs, "cluster_kwh_capacity"),
-        .kwh_capacity_dr = unpack(kwargs, "cluster_kwh_capacity_dr"),
-        .kw_generation = unpack(kwargs, "cluster_kw_generation"),
-        .kw_generation_dr = unpack(kwargs, "cluster_kw_generation_dr"),
-    };
+    ClusterSpec seller_spec = {0};
+    for (int i = 0; i < env->node_types; i++) {
+        snprintf(key, sizeof(key), "cluster_gpu_%d_capacity", i);
+        seller_spec.node_capacity[i] = unpack(kwargs, key);
+        snprintf(key, sizeof(key), "cluster_gpu_%d_capacity_dr", i);
+        seller_spec.node_capacity_dr[i] = unpack(kwargs, key);
+    }
+    seller_spec.tb_capacity = unpack(kwargs, "cluster_tb_capacity");
+    seller_spec.tb_capacity_dr = unpack(kwargs, "cluster_tb_capacity_dr");
+    seller_spec.kwh_capacity = unpack(kwargs, "cluster_kwh_capacity");
+    seller_spec.kwh_capacity_dr = unpack(kwargs, "cluster_kwh_capacity_dr");
+    seller_spec.kw_generation = unpack(kwargs, "cluster_kw_generation");
+    seller_spec.kw_generation_dr = unpack(kwargs, "cluster_kw_generation_dr");
     ClusterSpec buyer_spec = {0};
     init(env, buyer_spec, seller_spec);
     return 0;
