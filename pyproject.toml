@@ -58,3 +58,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.uv]
 no-build-isolation-package = ["torch"]
+cache-keys = [
+    { file = "setup.py" },
+    { file = "setup.cfg" },
+    { file = "pufferlib/ocean/**/*.c" },
+    { file = "pufferlib/ocean/**/*.h" },
+    { file = "pufferlib/extensions/*.cpp" },
+    { file = "pufferlib/extensions/*.cu" },
+]

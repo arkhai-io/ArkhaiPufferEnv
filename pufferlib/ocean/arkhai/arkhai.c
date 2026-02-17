@@ -234,8 +234,8 @@ int main() {
     c_close(&env);
     printf("Finished mirrored training environment\n\n");
 
-    // Selling 200x gpu_2 test
-    printf("Selling 200x single gpu_2 nodes\n");
+    // Selling 200x 5090 test
+    printf("Selling 200x single 5090 nodes\n");
     env = create_train_env();
     env.scripted_buy_price=1.0,
     env.scripted_buy_price_dr=0.0,
@@ -282,5 +282,5 @@ int main() {
     free(env.rewards);
     free(env.terminals);
     c_close(&env);
-    printf("Finished 200x single gpu_2 nodes\n");
+    printf("Finished 200x single 5090 nodes\n");
 }
