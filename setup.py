@@ -288,6 +288,7 @@ if not NO_TRAIN:
         'rich_argparse',
         'imageio',
         'gpytorch',
+        'pyro-ppl',
         'scikit-learn',
         'heavyball>=2.2.0', # contains relevant fixes compared to 1.7.2 and 2.1.1
         'neptune',

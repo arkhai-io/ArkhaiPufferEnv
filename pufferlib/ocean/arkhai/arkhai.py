@@ -6,49 +6,25 @@ import numpy as np
 import pufferlib
 from pufferlib.ocean.arkhai import binding
 
+# Note: I have moved out config into the .ini because the list of args is quite long. 
+# Let me know if you'd rather have them duplicated explicitly.
 class Arkhai(pufferlib.PufferEnv):
-    def __init__(self, num_envs=1, render_mode=None, log_interval=128, buf=None, seed=0,
-            episode_length=1000, max_job_duration=100, request_timeout=5,
-            energy_gen=10, energy_storage=100, max_nodes=100, max_space_tb=100,
-            buy_price_randomization=0.2, job_efficiency_randomization=0.2,
-            reward_scale=0.0001, space_tb_price=0.03,
-            a100_node_price=5.31, a100_node_energy_kw=6.5,
-            h100_node_price=15.92, h100_node_energy_kw=10.0,
-            energy_demand_base=1500.0, energy_price_base=20.0,
-            energy_price_sensitivity=0.0001, energy_demand_threshold=1400,
-            a1=-374, b1=-387, a2=-4.6, b2=-17.1, a3=3.2, b3=18.9, preset=0):
+    def __init__(self, num_envs=1, render_mode=None, log_interval=128, buf=None, seed=0, **kwargs):
+        node_types = int(kwargs.get('node_types', 3))
+        obs_dim = 12 + 3 * node_types
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
-            shape=(17,), dtype=np.float32)
+            shape=(obs_dim,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.MultiDiscrete([9, 2])
         self.render_mode = render_mode
-        self.num_agents = num_envs
+        ai_sellers = int(kwargs.get('ai_sellers', 1))
+        ai_buyers  = int(kwargs.get('ai_buyers', 0))
+        num_ai_agents = max(1, ai_sellers + ai_buyers)
+        self.num_agents = num_envs * num_ai_agents
         self.log_interval = log_interval
 
         super().__init__(buf)
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
-            self.terminals, self.truncations, num_envs, seed,
-            episode_length=episode_length,
-            max_job_duration=max_job_duration,
-            request_timeout=request_timeout,
-            energy_gen=energy_gen,
-            energy_storage=energy_storage,
-            max_nodes=max_nodes,
-            max_space_tb=max_space_tb,
-            buy_price_randomization=buy_price_randomization,
-            job_efficiency_randomization=job_efficiency_randomization,
-            reward_scale=reward_scale,
-            space_tb_price=space_tb_price,
-            a100_node_price=a100_node_price,
-            a100_node_energy_kw=a100_node_energy_kw,
-            h100_node_price=h100_node_price,
-            h100_node_energy_kw=h100_node_energy_kw,
-            energy_demand_base=energy_demand_base,
-            energy_price_base=energy_price_base,
-            energy_price_sensitivity=energy_price_sensitivity,
-            energy_demand_threshold=energy_demand_threshold,
-            a1=a1, b1=b1, a2=a2, b2=b2, a3=a3, b3=b3,
-            preset=preset # Preset overrides all other params if nonzero.
-        )
+            self.terminals, self.truncations, num_envs, seed, **kwargs)
  
     def reset(self, seed=0):
         self.tick = 0
