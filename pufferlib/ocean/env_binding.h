@@ -402,6 +402,11 @@ static PyObject* vec_init(PyObject* self, PyObject* args, PyObject* kwargs) {
         Py_INCREF(kwargs);  // We need to increment the reference since we'll be modifying it
     }
 
+    // rows_per_env: how many agent-row slots each env owns in the shared buffers.
+    // Derived from the allocated observation shape so env_binding.h stays generic.
+    npy_intp rows_per_env = PyArray_DIM(observations, 0) / num_envs;
+    if (rows_per_env < 1) rows_per_env = 1;
+
     for (int i = 0; i < num_envs; i++) {
         Env* env = (Env*)calloc(1, sizeof(Env));
         if (!env) {
@@ -410,14 +415,14 @@ static PyObject* vec_init(PyObject* self, PyObject* args, PyObject* kwargs) {
             return NULL;
         }
         vec->envs[i] = env;
-        
+
         // // Make sure the log is initialized to 0
         memset(&env->log, 0, sizeof(Log));
-        
-        env->observations = (void*)((char*)PyArray_DATA(observations) + i*PyArray_STRIDE(observations, 0));
-        env->actions = (void*)((char*)PyArray_DATA(actions) + i*PyArray_STRIDE(actions, 0));
-        env->rewards = (void*)((char*)PyArray_DATA(rewards) + i*PyArray_STRIDE(rewards, 0));
-        env->terminals = (void*)((char*)PyArray_DATA(terminals) + i*PyArray_STRIDE(terminals, 0));
+
+        env->observations = (void*)((char*)PyArray_DATA(observations) + i*rows_per_env*PyArray_STRIDE(observations, 0));
+        env->actions = (void*)((char*)PyArray_DATA(actions) + i*rows_per_env*PyArray_STRIDE(actions, 0));
+        env->rewards = (void*)((char*)PyArray_DATA(rewards) + i*rows_per_env*PyArray_STRIDE(rewards, 0));
+        env->terminals = (void*)((char*)PyArray_DATA(terminals) + i*rows_per_env*PyArray_STRIDE(terminals, 0));
         // env->truncations = (void*)((char*)PyArray_DATA(truncations) + i*PyArray_STRIDE(truncations, 0));
 
         // Assumes each process has the same number of environments

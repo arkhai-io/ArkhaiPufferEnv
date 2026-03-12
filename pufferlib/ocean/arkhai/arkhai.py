@@ -16,7 +16,10 @@ class Arkhai(pufferlib.PufferEnv):
             shape=(obs_dim,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.MultiDiscrete([9, 2])
         self.render_mode = render_mode
-        self.num_agents = num_envs
+        ai_sellers = int(kwargs.get('ai_sellers', 1))
+        ai_buyers  = int(kwargs.get('ai_buyers', 0))
+        num_ai_agents = max(1, ai_sellers + ai_buyers)
+        self.num_agents = num_envs * num_ai_agents
         self.log_interval = log_interval
 
         super().__init__(buf)
